@@ -134,30 +134,50 @@ async function inspectRepoExtras(repo, token) {
     // --- Automatic Detection ---
 
     // A. Releases & Downloads (e.g., Android APK, Windows EXE, etc.)
-    if (latestRelease && Array.isArray(latestRelease.assets) && latestRelease.assets.length > 0) {
+    const hasReleaseAssets = latestRelease && Array.isArray(latestRelease.assets) && latestRelease.assets.length > 0;
+    if (hasReleaseAssets) {
       // Find prominent downloadable assets
       const relevantAssets = latestRelease.assets.filter(a => {
         const ext = path.extname(a.name).toLowerCase();
         return ['.apk', '.exe', '.msi', '.zip', '.tar.gz', '.appimage', '.dmg', '.deb'].includes(ext);
       });
 
-      const targets = relevantAssets.length > 0 ? relevantAssets : latestRelease.assets.slice(0, 2);
+      const targets = relevantAssets.length > 0 ? relevantAssets : latestRelease.assets.slice(0, 3);
       for (const asset of targets) {
         const ext = path.extname(asset.name).toLowerCase();
+        const lowerName = asset.name.toLowerCase();
+
+        let arch = '';
+        if (lowerName.includes('arm64-v8a') || lowerName.includes('arm64')) arch = 'arm64';
+        else if (lowerName.includes('armeabi-v7a') || lowerName.includes('armv7')) arch = 'armv7';
+        else if (lowerName.includes('universal')) arch = 'universal';
+        else if (lowerName.includes('x86_64') || lowerName.includes('x64')) arch = 'x64';
+        else if (lowerName.includes('x86')) arch = 'x86';
+
         let typeBadge = 'Файл';
         if (ext === '.apk') typeBadge = 'APK';
         else if (ext === '.exe' || ext === '.msi') typeBadge = 'EXE';
         else if (ext === '.zip' || ext === '.tar.gz') typeBadge = 'ZIP';
 
+        const labelDetails = arch ? `${typeBadge} (${arch})` : typeBadge;
+
         actions.push({
           type: 'download',
-          label: `Скачать ${typeBadge} (${latestRelease.tag_name})`,
+          label: `Скачать ${labelDetails} • ${latestRelease.tag_name}`,
           fileName: asset.name,
           url: asset.browser_download_url,
           tag: latestRelease.tag_name,
+          arch: arch || null,
           size: formatBytes(asset.size)
         });
       }
+
+      // If project has official releases, DO NOT search for internal or helper scripts
+      return {
+        actions,
+        customDescription: portfolioConfig && portfolioConfig.description,
+        hide: portfolioConfig && portfolioConfig.hide === true
+      };
     }
 
     // B. PowerShell executable script (e.g., Win11Lite start.ps1)
