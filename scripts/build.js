@@ -73,34 +73,72 @@ async function fetchAllRepos(username, token) {
   return repos;
 }
 
-function extractBadgesFromReadme(markdown) {
+function extractBadgesFromReadme(markdown, repo) {
   if (!markdown) return [];
   // Focus on top of README before deep sections
   const headerSection = markdown.split(/\n##\s+/)[0] || markdown;
   const badges = [];
 
-  // 1. Linked badges: [![alt](imgUrl)](linkUrl)
-  const linkedBadgeRegex = /\[!\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)\]\((https?:\/\/[^\s\)]+)\)/g;
-  let match;
-  while ((match = linkedBadgeRegex.exec(headerSection)) !== null) {
-    const alt = match[1];
-    const imageUrl = match[2];
-    const linkUrl = match[3];
-    // Filter for badge services or SVG/badge patterns
-    if (imageUrl.includes('shields.io') || imageUrl.includes('badge.svg') || imageUrl.includes('badgen.net') || imageUrl.includes('/badge/')) {
-      badges.push({ alt, imageUrl, linkUrl });
+  function addBadge(alt, imageUrl, linkUrl) {
+    if (!imageUrl) return;
+    if (badges.some(b => b.imageUrl === imageUrl)) return;
+
+    const isBadgeService = imageUrl.includes('shields.io') || 
+                           imageUrl.includes('badge.svg') || 
+                           imageUrl.includes('badgen.net') || 
+                           imageUrl.includes('/badge/') ||
+                           imageUrl.includes('/badges/');
+    if (!isBadgeService) return;
+
+    let finalLink = linkUrl;
+    if (finalLink && repo) {
+      if (!finalLink.startsWith('http://') && !finalLink.startsWith('https://')) {
+        const owner = repo.owner ? repo.owner.login : 'ntvampire';
+        const defaultBranch = repo.default_branch || 'main';
+        finalLink = `https://github.com/${owner}/${repo.name}/blob/${defaultBranch}/${finalLink.replace(/^\.\//, '')}`;
+      }
     }
+
+    badges.push({
+      alt: alt || 'Статус',
+      imageUrl,
+      linkUrl: finalLink || null
+    });
   }
 
-  // 2. Standalone badges: ![alt](imgUrl)
-  const standaloneBadgeRegex = /(?:^|[^\(])!\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)/g;
-  while ((match = standaloneBadgeRegex.exec(headerSection)) !== null) {
-    const alt = match[1];
-    const imageUrl = match[2];
-    const isAlreadyExtracted = badges.some(b => b.imageUrl === imageUrl);
-    if (!isAlreadyExtracted && (imageUrl.includes('shields.io') || imageUrl.includes('badge.svg') || imageUrl.includes('badgen.net') || imageUrl.includes('/badge/'))) {
-      badges.push({ alt, imageUrl, linkUrl: null });
-    }
+  // 1. Markdown linked badges: [![alt](imgUrl)](linkUrl)
+  const mdLinkedRegex = /\[!\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)\]\(([^)]+)\)/g;
+  let match;
+  while ((match = mdLinkedRegex.exec(headerSection)) !== null) {
+    addBadge(match[1], match[2], match[3].trim());
+  }
+
+  // 2. Markdown standalone badges: ![alt](imgUrl)
+  const mdStandaloneRegex = /(?:^|[^\(])!\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)/g;
+  while ((match = mdStandaloneRegex.exec(headerSection)) !== null) {
+    addBadge(match[1], match[2], null);
+  }
+
+  // 3. HTML linked badges: <a href="..."><img src="..." /></a>
+  const htmlLinkedRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>\s*<img\s+[^>]*src=["'](https?:\/\/[^"']+)["'][^>]*alt=["']?([^"'>]*)["']?[^>]*\/?>\s*<\/a>/gi;
+  while ((match = htmlLinkedRegex.exec(headerSection)) !== null) {
+    addBadge(match[3], match[2], match[1].trim());
+  }
+
+  const htmlLinkedRegexAltFirst = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>\s*<img\s+[^>]*alt=["']?([^"'>]*)["'][^>]*src=["'](https?:\/\/[^"']+)["'][^>]*\/?>\s*<\/a>/gi;
+  while ((match = htmlLinkedRegexAltFirst.exec(headerSection)) !== null) {
+    addBadge(match[2], match[3], match[1].trim());
+  }
+
+  // 4. HTML standalone badges: <img src="..." />
+  const htmlImgRegex = /<img\s+[^>]*src=["'](https?:\/\/[^"']+)["'][^>]*alt=["']?([^"'>]*)["']?[^>]*\/?>/gi;
+  while ((match = htmlImgRegex.exec(headerSection)) !== null) {
+    addBadge(match[2], match[1], null);
+  }
+
+  const htmlImgRegexAltFirst = /<img\s+[^>]*alt=["']?([^"'>]*)["'][^>]*src=["'](https?:\/\/[^"']+)["'][^>]*\/?>/gi;
+  while ((match = htmlImgRegexAltFirst.exec(headerSection)) !== null) {
+    addBadge(match[1], match[2], null);
   }
 
   return badges;
@@ -133,7 +171,7 @@ async function inspectRepoExtras(repo, token) {
     const readmeData = await fetchJson(readmeUrl, headers);
     if (readmeData && readmeData.content && readmeData.encoding === 'base64') {
       const decodedReadme = Buffer.from(readmeData.content, 'base64').toString('utf8');
-      badges = extractBadgesFromReadme(decodedReadme);
+      badges = extractBadgesFromReadme(decodedReadme, repo);
     }
   } catch (err) {
     console.warn(`Could not fetch README for ${repoName}: ${err.message}`);
