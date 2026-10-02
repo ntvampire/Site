@@ -43,6 +43,24 @@ function fetchJson(url, headers = {}) {
   });
 }
 
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers: { 'User-Agent': 'GitHub-Site-Generator' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return downloadFile(res.headers.location, destPath).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error(`Failed to download: HTTP ${res.statusCode}`));
+      }
+      const file = fs.createWriteStream(destPath);
+      res.pipe(file);
+      file.on('finish', () => {
+        file.close(resolve);
+      });
+    }).on('error', reject);
+  });
+}
+
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '';
   const k = 1024;
@@ -426,6 +444,16 @@ async function main() {
   const distDir = path.join(__dirname, '..', 'dist');
   if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
+  }
+
+  // Download user profile icon as favicon.png
+  try {
+    const avatarUrl = `https://github.com/${userLogin}.png`;
+    console.log(`Downloading avatar from ${avatarUrl} to dist/favicon.png...`);
+    await downloadFile(avatarUrl, path.join(distDir, 'favicon.png'));
+    console.log('Successfully saved profile icon to dist/favicon.png');
+  } catch (err) {
+    console.warn(`Could not save local favicon: ${err.message}`);
   }
 
   // Generate HTML
