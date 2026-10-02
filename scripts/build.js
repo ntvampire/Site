@@ -43,20 +43,18 @@ function fetchJson(url, headers = {}) {
   });
 }
 
-function downloadFile(url, destPath) {
+function downloadBuffer(url) {
   return new Promise((resolve, reject) => {
     https.get(url, { headers: { 'User-Agent': 'GitHub-Site-Generator' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return downloadFile(res.headers.location, destPath).then(resolve).catch(reject);
+        return downloadBuffer(res.headers.location).then(resolve).catch(reject);
       }
       if (res.statusCode !== 200) {
         return reject(new Error(`Failed to download: HTTP ${res.statusCode}`));
       }
-      const file = fs.createWriteStream(destPath);
-      res.pipe(file);
-      file.on('finish', () => {
-        file.close(resolve);
-      });
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
     }).on('error', reject);
   });
 }
@@ -446,12 +444,25 @@ async function main() {
     fs.mkdirSync(distDir, { recursive: true });
   }
 
-  // Download user profile icon as favicon.png
+  // Download user profile icon as circular favicon.svg and favicon.png
   try {
     const avatarUrl = `https://github.com/${userLogin}.png`;
-    console.log(`Downloading avatar from ${avatarUrl} to dist/favicon.png...`);
-    await downloadFile(avatarUrl, path.join(distDir, 'favicon.png'));
-    console.log('Successfully saved profile icon to dist/favicon.png');
+    console.log(`Downloading avatar from ${avatarUrl}...`);
+    const avatarBuf = await downloadBuffer(avatarUrl);
+    fs.writeFileSync(path.join(distDir, 'favicon.png'), avatarBuf);
+
+    // Generate circular SVG with clean transparent corners
+    const base64Avatar = avatarBuf.toString('base64');
+    const svgFavicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <clipPath id="circle-clip">
+      <circle cx="50" cy="50" r="48" />
+    </clipPath>
+  </defs>
+  <image href="data:image/png;base64,${base64Avatar}" width="100" height="100" clip-path="url(#circle-clip)" preserveAspectRatio="xMidYMid slice" />
+</svg>`;
+    fs.writeFileSync(path.join(distDir, 'favicon.svg'), svgFavicon, 'utf8');
+    console.log('Successfully saved circular favicon.svg and favicon.png');
   } catch (err) {
     console.warn(`Could not save local favicon: ${err.message}`);
   }
