@@ -263,6 +263,27 @@
       text-decoration: none;
     }
 
+    .card-badges {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .card-badges a {
+      display: inline-flex;
+      text-decoration: none;
+    }
+
+    .card-badges img {
+      max-height: 22px;
+      height: auto;
+      border-radius: 3px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
     .card-desc {
       color: var(--text-muted);
       font-size: 14px;
@@ -725,6 +746,13 @@
             ? `<div class="lang-badge"><span class="lang-dot" style="background-color: ${getLanguageColor(p.language)}"></span>${escapeHtml(p.language)}</div>`
             : `<span></span>`;
 
+          const badgesHtml = (p.badges && p.badges.length > 0)
+            ? `<div class="card-badges">${p.badges.map(b => {
+                const img = `<img src="${escapeHtml(b.imageUrl)}" alt="${escapeHtml(b.alt || 'badge')}" loading="lazy">`;
+                return b.linkUrl ? `<a href="${escapeHtml(b.linkUrl)}" target="_blank" rel="noopener">${img}</a>` : img;
+              }).join('')}</div>`
+            : '';
+
           const actionsHtml = renderActions(p.actions);
 
           return `
@@ -744,6 +772,7 @@
                   </div>
                 </div>
                 <p class="card-desc" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</p>
+                ${badgesHtml}
                 ${topicsHtml}
                 ${actionsHtml}
               </div>

@@ -79,6 +79,45 @@ async function inspectRepoExtras(repo, token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+function extractBadgesFromReadme(markdown) {
+  if (!markdown) return [];
+  // Focus on top of README before deep sections
+  const headerSection = markdown.split(/\n##\s+/)[0] || markdown;
+  const badges = [];
+
+  // 1. Linked badges: [![alt](imgUrl)](linkUrl)
+  const linkedBadgeRegex = /\[!\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)\]\((https?:\/\/[^\s\)]+)\)/g;
+  let match;
+  while ((match = linkedBadgeRegex.exec(headerSection)) !== null) {
+    const alt = match[1];
+    const imageUrl = match[2];
+    const linkUrl = match[3];
+    // Filter for badge services or SVG/badge patterns
+    if (imageUrl.includes('shields.io') || imageUrl.includes('badge.svg') || imageUrl.includes('badgen.net') || imageUrl.includes('/badge/')) {
+      badges.push({ alt, imageUrl, linkUrl });
+    }
+  }
+
+  // 2. Standalone badges: ![alt](imgUrl)
+  const standaloneBadgeRegex = /(?:^|[^\(])!\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)/g;
+  while ((match = standaloneBadgeRegex.exec(headerSection)) !== null) {
+    const alt = match[1];
+    const imageUrl = match[2];
+    const isAlreadyExtracted = badges.some(b => b.imageUrl === imageUrl);
+    if (!isAlreadyExtracted && (imageUrl.includes('shields.io') || imageUrl.includes('badge.svg') || imageUrl.includes('badgen.net') || imageUrl.includes('/badge/'))) {
+      badges.push({ alt, imageUrl, linkUrl: null });
+    }
+  }
+
+  return badges;
+}
+
+async function inspectRepoExtras(repo, token) {
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const owner = repo.owner.login;
   const repoName = repo.name;
   const defaultBranch = repo.default_branch || 'main';
@@ -92,8 +131,21 @@ async function inspectRepoExtras(repo, token) {
   let latestRelease = null;
   let rootFiles = [];
   let portfolioConfig = null;
+  let badges = [];
 
-  // 1. Fetch latest release
+  // 1. Fetch README and extract badges
+  try {
+    const readmeUrl = `https://api.github.com/repos/${owner}/${repoName}/readme`;
+    const readmeData = await fetchJson(readmeUrl, headers);
+    if (readmeData && readmeData.content && readmeData.encoding === 'base64') {
+      const decodedReadme = Buffer.from(readmeData.content, 'base64').toString('utf8');
+      badges = extractBadgesFromReadme(decodedReadme);
+    }
+  } catch (err) {
+    console.warn(`Could not fetch README for ${repoName}: ${err.message}`);
+  }
+
+  // 2. Fetch latest release
   try {
     const releaseUrl = `https://api.github.com/repos/${owner}/${repoName}/releases/latest`;
     latestRelease = await fetchJson(releaseUrl, headers);
@@ -101,7 +153,7 @@ async function inspectRepoExtras(repo, token) {
     console.warn(`Could not fetch releases for ${repoName}: ${err.message}`);
   }
 
-  // 2. Fetch root directory contents
+  // 3. Fetch root directory contents
   try {
     const contentsUrl = `https://api.github.com/repos/${owner}/${repoName}/contents`;
     const contents = await fetchJson(contentsUrl, headers);
@@ -112,7 +164,7 @@ async function inspectRepoExtras(repo, token) {
     console.warn(`Could not fetch contents for ${repoName}: ${err.message}`);
   }
 
-  // 3. Check for .portfolio.json or portfolio.json (Universal fallback config)
+  // 4. Check for .portfolio.json or portfolio.json (Universal fallback config)
   const configFile = rootFiles.find(f => f.name === '.portfolio.json' || f.name === 'portfolio.json');
   if (configFile && configFile.download_url) {
     try {
@@ -175,6 +227,7 @@ async function inspectRepoExtras(repo, token) {
       // If project has official releases, DO NOT search for internal or helper scripts
       return {
         actions,
+        badges,
         customDescription: portfolioConfig && portfolioConfig.description,
         hide: portfolioConfig && portfolioConfig.hide === true
       };
@@ -228,6 +281,7 @@ async function inspectRepoExtras(repo, token) {
 
   return {
     actions,
+    badges,
     customDescription: portfolioConfig && portfolioConfig.description,
     hide: portfolioConfig && portfolioConfig.hide === true
   };
@@ -329,6 +383,7 @@ async function main() {
       language: repo.language || null,
       topics: Array.isArray(repo.topics) ? repo.topics : [],
       updatedAt: repo.pushed_at ? new Date(repo.pushed_at).toISOString() : new Date().toISOString(),
+      badges: extras.badges || [],
       actions: extras.actions || []
     });
   }
