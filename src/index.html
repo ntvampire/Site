@@ -16,12 +16,17 @@
       --text-muted: #8b949e;
       --text-dim: #6e7681;
       --accent: #58a6ff;
+      --accent-hover: #79b8ff;
       --tag-bg: #21262d;
       --tag-text: #c9d1d9;
       --tag-active-bg: #388bfd33;
       --tag-active-text: #58a6ff;
       --tag-active-border: #58a6ff;
-      --lang-dot: #8b949e;
+      --btn-bg: #21262d;
+      --btn-border: #363b42;
+      --btn-hover-bg: #30363d;
+      --action-code-bg: #0a0d12;
+      --action-success: #3fb950;
       --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
       --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
@@ -261,7 +266,7 @@
     .card-desc {
       color: var(--text-muted);
       font-size: 13.5px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
       flex-grow: 1;
       display: -webkit-box;
       -webkit-line-clamp: 3;
@@ -273,7 +278,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
 
     .topic-pill {
@@ -284,6 +289,113 @@
       border: 1px solid var(--border);
       padding: 2px 7px;
       border-radius: 4px;
+    }
+
+    /* Quick Actions */
+    .card-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      color: var(--text-main);
+      padding: 7px 12px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-family: var(--font-mono);
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      width: 100%;
+    }
+
+    .action-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--accent);
+      color: var(--text-main);
+      text-decoration: none;
+    }
+
+    .action-btn-left {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .action-badge {
+      font-size: 11px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+
+    .action-command-box {
+      background: var(--action-code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .action-command-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+    }
+
+    .action-command-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .action-command-code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #7ee787;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex-grow: 1;
+      user-select: all;
+    }
+
+    .copy-btn {
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      color: var(--text-muted);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+
+    .copy-btn:hover {
+      color: var(--text-main);
+      border-color: var(--text-muted);
+    }
+
+    .copy-btn.copied {
+      color: var(--action-success);
+      border-color: var(--action-success);
     }
 
     .card-footer {
@@ -307,7 +419,6 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background-color: var(--lang-dot);
       display: inline-block;
     }
 
@@ -479,10 +590,85 @@
           'PHP': '#4F5D95',
           'Ruby': '#701516',
           'Shell': '#89e051',
+          'PowerShell': '#012456',
           'Kotlin': '#A97BFF',
           'Swift': '#F05138'
         };
         return colors[lang] || '#8b949e';
+      }
+
+      window.copyToClipboard = function(text, btnElement) {
+        navigator.clipboard.writeText(text).then(() => {
+          const original = btnElement.textContent;
+          btnElement.textContent = '✓ Скопировано';
+          btnElement.classList.add('copied');
+          setTimeout(() => {
+            btnElement.textContent = original;
+            btnElement.classList.remove('copied');
+          }, 2000);
+        }).catch(err => {
+          console.error('Clipboard error:', err);
+        });
+      };
+
+      function renderActions(actions) {
+        if (!actions || actions.length === 0) return '';
+
+        const items = actions.map(act => {
+          if (act.type === 'download') {
+            return `
+              <a href="${escapeHtml(act.url)}" class="action-btn" target="_blank" rel="noopener">
+                <span class="action-btn-left">
+                  <span>📥</span>
+                  <span>${escapeHtml(act.label || 'Скачать релиз')}</span>
+                </span>
+                <span class="action-badge">${escapeHtml(act.size || '')}</span>
+              </a>
+            `;
+          }
+
+          if (act.type === 'command') {
+            const cmd = act.command || act.copyText || '';
+            return `
+              <div class="action-command-box">
+                <div class="action-command-header">
+                  <span>${escapeHtml(act.label || 'Команда запуска')}</span>
+                  <span>${escapeHtml(act.note || '')}</span>
+                </div>
+                <div class="action-command-row">
+                  <code class="action-command-code" title="${escapeHtml(cmd)}">${escapeHtml(cmd)}</code>
+                  <button type="button" class="copy-btn" onclick="copyToClipboard('${escapeHtml(cmd).replace(/'/g, "\\'")}', this)">
+                    Копировать
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+
+          if (act.type === 'copy_link') {
+            const url = act.url || act.copyText || '';
+            return `
+              <div class="action-btn" style="cursor: default;">
+                <span class="action-btn-left">
+                  <span>🔗</span>
+                  <span>${escapeHtml(act.label || 'Ссылка')}</span>
+                </span>
+                <span style="display: inline-flex; gap: 6px;">
+                  <button type="button" class="copy-btn" onclick="copyToClipboard('${escapeHtml(url).replace(/'/g, "\\'")}', this)">
+                    Копировать
+                  </button>
+                  <a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="copy-btn" style="text-decoration: none;">
+                    Открыть ↗
+                  </a>
+                </span>
+              </div>
+            `;
+          }
+
+          return '';
+        }).join('');
+
+        return `<div class="card-actions">${items}</div>`;
       }
 
       function render() {
@@ -517,6 +703,8 @@
             ? `<div class="lang-badge"><span class="lang-dot" style="background-color: ${getLanguageColor(p.language)}"></span>${escapeHtml(p.language)}</div>`
             : `<span></span>`;
 
+          const actionsHtml = renderActions(p.actions);
+
           return `
             <article class="card">
               <div>
@@ -535,6 +723,7 @@
                 </div>
                 <p class="card-desc" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</p>
                 ${topicsHtml}
+                ${actionsHtml}
               </div>
               <div class="card-footer">
                 ${langHtml}
