@@ -1,0 +1,68 @@
+name: Deploy Projects Showcase to GitHub Pages
+
+on:
+  # 1. Автоматический запуск под утро (03:37 UTC — не круглое время, чтобы избежать перегрузки серверов GitHub)
+  schedule:
+    - cron: '37 3 * * *'
+
+  # 2. Ручной запуск из вкладки Actions
+  workflow_dispatch:
+
+  # 3. Триггер из других ваших репозиториев через GitHub API / repository_dispatch
+  repository_dispatch:
+    types: [projects_updated, rebuild]
+
+  # 4. При обновлении кода самого сайта
+  push:
+    branches:
+      - main
+      - master
+
+# Разрешения для сборки и развертывания на GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Projects Site
+        env:
+          GH_USERNAME: ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Репозитории, которые не нужно показывать на странице (через запятую)
+          # По умолчанию исключаем сам репозиторий сайта "Site"
+          EXCLUDE_REPOS: 'Site'
+          EXCLUDE_FORKS: 'true'
+          EXCLUDE_ARCHIVED: 'true'
+        run: |
+          node scripts/build.js
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
