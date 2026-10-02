@@ -73,12 +73,6 @@ async function fetchAllRepos(username, token) {
   return repos;
 }
 
-async function inspectRepoExtras(repo, token) {
-  const headers = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
 function extractBadgesFromReadme(markdown) {
   if (!markdown) return [];
   // Focus on top of README before deep sections
