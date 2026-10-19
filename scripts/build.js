@@ -233,41 +233,71 @@ async function inspectRepoExtras(repo, token) {
   } else {
     // --- Automatic Detection ---
 
-    // A. Releases & Downloads (e.g., Android APK, Windows EXE, etc.)
+    // A. Releases & Downloads (e.g., Android APK, Windows EXE, Linux tar.gz, etc.)
     const hasReleaseAssets = latestRelease && Array.isArray(latestRelease.assets) && latestRelease.assets.length > 0;
     if (hasReleaseAssets) {
-      // Find prominent downloadable assets
-      const relevantAssets = latestRelease.assets.filter(a => {
-        const ext = path.extname(a.name).toLowerCase();
-        return ['.apk', '.exe', '.msi', '.zip', '.tar.gz', '.appimage', '.dmg', '.deb'].includes(ext);
-      });
+      function getAssetDetails(fileName) {
+        const lower = fileName.toLowerCase();
 
-      const targets = relevantAssets.length > 0 ? relevantAssets : latestRelease.assets.slice(0, 3);
-      for (const asset of targets) {
-        const ext = path.extname(asset.name).toLowerCase();
-        const lowerName = asset.name.toLowerCase();
+        let ext = '';
+        if (lower.endsWith('.tar.gz')) ext = '.tar.gz';
+        else if (lower.endsWith('.tar.xz')) ext = '.tar.xz';
+        else ext = path.extname(fileName).toLowerCase();
+
+        const isDownloadable = ['.apk', '.exe', '.msi', '.zip', '.tar.gz', '.tar.xz', '.gz', '.appimage', '.dmg', '.deb', '.rpm', '.bin'].includes(ext);
 
         let arch = '';
-        if (lowerName.includes('arm64-v8a') || lowerName.includes('arm64')) arch = 'arm64';
-        else if (lowerName.includes('armeabi-v7a') || lowerName.includes('armv7')) arch = 'armv7';
-        else if (lowerName.includes('universal')) arch = 'universal';
-        else if (lowerName.includes('x86_64') || lowerName.includes('x64')) arch = 'x64';
-        else if (lowerName.includes('x86')) arch = 'x86';
+        if (lower.includes('arm64-v8a') || lower.includes('arm64') || lower.includes('aarch64')) arch = 'arm64';
+        else if (lower.includes('armeabi-v7a') || lower.includes('armv7')) arch = 'armv7';
+        else if (lower.includes('universal')) arch = 'universal';
+        else if (lower.includes('x86_64') || lower.includes('x64')) arch = 'x64';
+        else if (lower.includes('x86') || lower.includes('win32')) arch = 'x86';
+
+        let os = '';
+        if (lower.includes('linux') || ext === '.deb' || ext === '.rpm' || ext === '.appimage') os = 'Linux';
+        else if (lower.includes('win7-11')) os = 'Win 7-11';
+        else if (lower.includes('win') || ext === '.exe' || ext === '.msi') os = 'Windows';
+        else if (lower.includes('mac') || lower.includes('darwin') || ext === '.dmg') os = 'macOS';
+        else if (lower.includes('android') || ext === '.apk') os = 'Android';
 
         let typeBadge = 'Файл';
         if (ext === '.apk') typeBadge = 'APK';
         else if (ext === '.exe' || ext === '.msi') typeBadge = 'EXE';
-        else if (ext === '.zip' || ext === '.tar.gz') typeBadge = 'ZIP';
+        else if (ext === '.tar.gz' || ext === '.tar.xz' || ext === '.gz') typeBadge = 'tar.gz';
+        else if (ext === '.zip') typeBadge = 'ZIP';
+        else if (ext === '.deb') typeBadge = 'DEB';
+        else if (ext === '.appimage') typeBadge = 'AppImage';
 
-        const labelDetails = arch ? `${typeBadge} (${arch})` : typeBadge;
+        const labelParts = [];
+        if (ext === '.apk') {
+          labelParts.push('APK');
+          if (arch) labelParts.push(`(${arch})`);
+        } else if (os) {
+          labelParts.push(os);
+          if (arch) labelParts.push(`(${arch})`);
+          if (typeBadge !== 'EXE' && typeBadge !== 'Файл') labelParts.push(typeBadge);
+        } else {
+          labelParts.push(typeBadge);
+          if (arch) labelParts.push(`(${arch})`);
+        }
+
+        return { isDownloadable, label: labelParts.join(' ') || typeBadge, arch, os };
+      }
+
+      // Filter downloadable assets
+      const relevantAssets = latestRelease.assets.filter(a => getAssetDetails(a.name).isDownloadable);
+      const targets = relevantAssets.length > 0 ? relevantAssets : latestRelease.assets.slice(0, 6);
+
+      for (const asset of targets) {
+        const details = getAssetDetails(asset.name);
 
         actions.push({
           type: 'download',
-          label: `Скачать ${labelDetails} • ${latestRelease.tag_name}`,
+          label: `Скачать ${details.label} • ${latestRelease.tag_name}`,
           fileName: asset.name,
           url: asset.browser_download_url,
           tag: latestRelease.tag_name,
-          arch: arch || null,
+          arch: details.arch || null,
           size: formatBytes(asset.size)
         });
       }
